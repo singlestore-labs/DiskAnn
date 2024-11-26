@@ -16,7 +16,7 @@
 
 
 # Some variables like MSVC are defined only after project(), so put that first.
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.20)
 project(diskann)
 
 set(CMAKE_STANDARD 17)
@@ -145,119 +145,135 @@ if (MSVC)
         "${DISKANN_MKL_LIB_PATH}/mkl_intel_thread.lib")
 else()
     # expected path for manual intel mkl installs
-    set(POSSIBLE_OMP_PATHS "/opt/intel/oneapi/compiler/latest/linux/compiler/lib/intel64_lin/libiomp5.so;/usr/lib/x86_64-linux-gnu/libiomp5.so;/opt/intel/lib/intel64_lin/libiomp5.so")
-    foreach(POSSIBLE_OMP_PATH ${POSSIBLE_OMP_PATHS})
-        if (EXISTS ${POSSIBLE_OMP_PATH})
-            get_filename_component(OMP_PATH ${POSSIBLE_OMP_PATH} DIRECTORY)
-        endif()
-    endforeach()
+    # set(POSSIBLE_OMP_PATHS "/opt/intel/oneapi/compiler/latest/linux/compiler/lib/intel64_lin/libiomp5.so;/usr/lib/x86_64-linux-gnu/libiomp5.so;/opt/intel/lib/intel64_lin/libiomp5.so")
+    # foreach(POSSIBLE_OMP_PATH ${POSSIBLE_OMP_PATHS})
+    #     if (EXISTS ${POSSIBLE_OMP_PATH})
+    #         get_filename_component(OMP_PATH ${POSSIBLE_OMP_PATH} DIRECTORY)
+    #     endif()
+    # endforeach()
+    #
+    # if(NOT OMP_PATH)
+    #     message(FATAL_ERROR "Could not find Intel OMP in standard locations; use -DOMP_PATH to specify the install location for your environment")
+    # endif()
+    # link_directories(${OMP_PATH})
+    #
+    # set(POSSIBLE_MKL_LIB_PATHS "/opt/intel/oneapi/mkl/latest/lib/intel64/libmkl_core.so;/usr/lib/x86_64-linux-gnu/libmkl_core.so;/opt/intel/mkl/lib/intel64/libmkl_core.so")
+    # foreach(POSSIBLE_MKL_LIB_PATH ${POSSIBLE_MKL_LIB_PATHS})
+    #     if (EXISTS ${POSSIBLE_MKL_LIB_PATH})
+    #         get_filename_component(MKL_PATH ${POSSIBLE_MKL_LIB_PATH} DIRECTORY)
+    #     endif()
+    # endforeach()
+    #
+    # set(POSSIBLE_MKL_INCLUDE_PATHS "/opt/intel/oneapi/mkl/latest/include;/usr/include/mkl;/opt/intel/mkl/include/;")
+    # foreach(POSSIBLE_MKL_INCLUDE_PATH ${POSSIBLE_MKL_INCLUDE_PATHS})
+    #     if (EXISTS ${POSSIBLE_MKL_INCLUDE_PATH})
+    #         set(MKL_INCLUDE_PATH ${POSSIBLE_MKL_INCLUDE_PATH})
+    #     endif()
+    # endforeach()
 
-    if(NOT OMP_PATH)
-        message(FATAL_ERROR "Could not find Intel OMP in standard locations; use -DOMP_PATH to specify the install location for your environment")
-    endif()
-    link_directories(${OMP_PATH})
+    find_package(MKL)
 
-    set(POSSIBLE_MKL_LIB_PATHS "/opt/intel/oneapi/mkl/latest/lib/intel64/libmkl_core.so;/usr/lib/x86_64-linux-gnu/libmkl_core.so;/opt/intel/mkl/lib/intel64/libmkl_core.so")
-    foreach(POSSIBLE_MKL_LIB_PATH ${POSSIBLE_MKL_LIB_PATHS})
-        if (EXISTS ${POSSIBLE_MKL_LIB_PATH})
-            get_filename_component(MKL_PATH ${POSSIBLE_MKL_LIB_PATH} DIRECTORY)
-        endif()
-    endforeach()
+    # if(NOT MKL_PATH)
+    #     message(FATAL_ERROR "Could not find Intel MKL in standard locations; use -DMKL_PATH to specify the install location for your environment")
+    # elseif(NOT MKL_INCLUDE_PATH)
+    #     message(FATAL_ERROR "Could not find Intel MKL in standard locations; use -DMKL_INCLUDE_PATH to specify the install location for headers for your environment")
+    # endif()
+    # if (EXISTS ${MKL_PATH}/libmkl_def.so.2)
+    #     set(MKL_DEF_SO ${MKL_PATH}/libmkl_def.so.2)
+    # elseif(EXISTS ${MKL_PATH}/libmkl_def.so)
+    #     set(MKL_DEF_SO ${MKL_PATH}/libmkl_def.so)
+    # else()
+    #     message(FATAL_ERROR "Despite finding MKL, libmkl_def.so was not found in expected locations.")
+    # endif()
+    # link_directories(${MKL_PATH})
+    # include_directories(${MKL_INCLUDE_PATH})
 
-    set(POSSIBLE_MKL_INCLUDE_PATHS "/opt/intel/oneapi/mkl/latest/include;/usr/include/mkl;/opt/intel/mkl/include/;")
-    foreach(POSSIBLE_MKL_INCLUDE_PATH ${POSSIBLE_MKL_INCLUDE_PATHS})
-        if (EXISTS ${POSSIBLE_MKL_INCLUDE_PATH})
-            set(MKL_INCLUDE_PATH ${POSSIBLE_MKL_INCLUDE_PATH})
-        endif()
-    endforeach()
-    if(NOT MKL_PATH)
-        message(FATAL_ERROR "Could not find Intel MKL in standard locations; use -DMKL_PATH to specify the install location for your environment")
-    elseif(NOT MKL_INCLUDE_PATH)
-        message(FATAL_ERROR "Could not find Intel MKL in standard locations; use -DMKL_INCLUDE_PATH to specify the install location for headers for your environment")
+    if (NOT MKL_FOUND)
+        messsage(FATAL_ERROR "MKL not found")
     endif()
-    if (EXISTS ${MKL_PATH}/libmkl_def.so.2)
-        set(MKL_DEF_SO ${MKL_PATH}/libmkl_def.so.2)
-    elseif(EXISTS ${MKL_PATH}/libmkl_def.so)
-        set(MKL_DEF_SO ${MKL_PATH}/libmkl_def.so)
-    else()
-        message(FATAL_ERROR "Despite finding MKL, libmkl_def.so was not found in expected locations.")
-    endif()
-    link_directories(${MKL_PATH})
-    include_directories(${MKL_INCLUDE_PATH})
-
-    # compile flags and link libraries
-    add_compile_options(-m64 -Wl,--no-as-needed)
-    if (NOT PYBIND)
-        link_libraries(mkl_intel_ilp64 mkl_intel_thread mkl_core iomp5 pthread m dl)
-    else()
-        # static linking for python so as to minimize customer dependency issues
-        link_libraries(
-                ${MKL_PATH}/libmkl_intel_ilp64.a
-                ${MKL_PATH}/libmkl_intel_thread.a
-                ${MKL_PATH}/libmkl_core.a
-                ${MKL_DEF_SO}
-                iomp5
-                pthread
-                m
-                dl
-        )
-    endif()
+    link_libraries(
+            ${MKL_LIBRARIES}
+            -lmkl_blacs_intelmpi_ilp64
+            -lmkl_blacs_intelmpi_lp64
+            -lmkl_blacs_openmpi_ilp64
+            -lmkl_blacs_openmpi_lp64
+            -lmkl_blas95_ilp64
+            -lmkl_blas95_lp64
+            -lmkl_cdft_core
+            -lmkl_core
+            -lmkl_gf_ilp64
+            -lmkl_gf_lp64
+            -lmkl_gnu_thread
+            -lmkl_intel_ilp64
+            -lmkl_intel_lp64
+            -lmkl_intel_thread
+            -lmkl_lapack95_ilp64
+            -lmkl_lapack95_lp64
+            -lmkl_pgi_thread
+            -lmkl_scalapack_ilp64
+            -lmkl_scalapack_lp64
+            -lmkl_sequential
+            -lmkl_tbb_thread
+            # iomp5
+            pthread
+            m
+            dl)
 endif()
 
-add_definitions(-DMKL_ILP64)
+# add_definitions(-DMKL_ILP64)
 
 # Section for tcmalloc. The DiskANN tools are always linked to tcmalloc. For Windows, they also need to
 # force-include the _tcmalloc symbol for enabling tcmalloc.
 #
 # The DLL itself needs to be linked to tcmalloc only if DISKANN_RELEASE_UNUSED_TCMALLOC_MEMORY_AT_CHECKPOINTS
 # is enabled.
-if (MSVC)
-    if (NOT EXISTS "${PROJECT_SOURCE_DIR}/gperftools/gperftools.sln")
-        message(FATAL_ERROR "The gperftools submodule was not found. "
-                "Please check-out git submodules by doing 'git submodule init' followed by 'git submodule update'")
-    endif()
-
-    set(TCMALLOC_LINK_LIBRARY "${PROJECT_SOURCE_DIR}/gperftools/x64/Release-Patch/libtcmalloc_minimal.lib")
-    set(TCMALLOC_WINDOWS_RUNTIME_FILES
-        "${PROJECT_SOURCE_DIR}/gperftools/x64/Release-Patch/libtcmalloc_minimal.dll"
-        "${PROJECT_SOURCE_DIR}/gperftools/x64/Release-Patch/libtcmalloc_minimal.pdb")
-
-    # Tell CMake how to build the tcmalloc linker library from the submodule.
-    add_custom_target(build_libtcmalloc_minimal DEPENDS ${TCMALLOC_LINK_LIBRARY})
-    add_custom_command(OUTPUT ${TCMALLOC_LINK_LIBRARY}
-                        COMMAND ${CMAKE_VS_MSBUILD_COMMAND} gperftools.sln /m /nologo
-                            /t:libtcmalloc_minimal /p:Configuration="Release-Patch"
-                            /property:Platform="x64"
-                            /p:PlatformToolset=v${MSVC_TOOLSET_VERSION}
-                            /p:WindowsTargetPlatformVersion=${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION}
-                        WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/gperftools)
- 
-    add_library(libtcmalloc_minimal_for_exe STATIC IMPORTED)
-    add_library(libtcmalloc_minimal_for_dll STATIC IMPORTED)
-
-    set_target_properties(libtcmalloc_minimal_for_dll PROPERTIES
-                          IMPORTED_LOCATION "${TCMALLOC_LINK_LIBRARY}")
-
-    set_target_properties(libtcmalloc_minimal_for_exe PROPERTIES
-                          IMPORTED_LOCATION "${TCMALLOC_LINK_LIBRARY}"
-                          INTERFACE_LINK_OPTIONS /INCLUDE:_tcmalloc)
-
-    # Ensure libtcmalloc_minimal is built before it's being used.
-    add_dependencies(libtcmalloc_minimal_for_dll build_libtcmalloc_minimal)
-    add_dependencies(libtcmalloc_minimal_for_exe build_libtcmalloc_minimal)
-
-    set(DISKANN_TOOLS_TCMALLOC_LINK_OPTIONS libtcmalloc_minimal_for_exe)
-elseif(NOT PYBIND)
-    set(DISKANN_TOOLS_TCMALLOC_LINK_OPTIONS "-ltcmalloc")
-endif()
-
-if (DISKANN_RELEASE_UNUSED_TCMALLOC_MEMORY_AT_CHECKPOINTS)
-    add_definitions(-DRELEASE_UNUSED_TCMALLOC_MEMORY_AT_CHECKPOINTS)
-
-    if (MSVC)
-        set(DISKANN_DLL_TCMALLOC_LINK_OPTIONS libtcmalloc_minimal_for_dll)
-    endif()
-endif()
+# if (MSVC)
+#     if (NOT EXISTS "${PROJECT_SOURCE_DIR}/gperftools/gperftools.sln")
+#         message(FATAL_ERROR "The gperftools submodule was not found. "
+#                 "Please check-out git submodules by doing 'git submodule init' followed by 'git submodule update'")
+#     endif()
+#
+#     set(TCMALLOC_LINK_LIBRARY "${PROJECT_SOURCE_DIR}/gperftools/x64/Release-Patch/libtcmalloc_minimal.lib")
+#     set(TCMALLOC_WINDOWS_RUNTIME_FILES
+#         "${PROJECT_SOURCE_DIR}/gperftools/x64/Release-Patch/libtcmalloc_minimal.dll"
+#         "${PROJECT_SOURCE_DIR}/gperftools/x64/Release-Patch/libtcmalloc_minimal.pdb")
+#
+#     # Tell CMake how to build the tcmalloc linker library from the submodule.
+#     add_custom_target(build_libtcmalloc_minimal DEPENDS ${TCMALLOC_LINK_LIBRARY})
+#     add_custom_command(OUTPUT ${TCMALLOC_LINK_LIBRARY}
+#                         COMMAND ${CMAKE_VS_MSBUILD_COMMAND} gperftools.sln /m /nologo
+#                             /t:libtcmalloc_minimal /p:Configuration="Release-Patch"
+#                             /property:Platform="x64"
+#                             /p:PlatformToolset=v${MSVC_TOOLSET_VERSION}
+#                             /p:WindowsTargetPlatformVersion=${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION}
+#                         WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/gperftools)
+#  
+#     add_library(libtcmalloc_minimal_for_exe STATIC IMPORTED)
+#     add_library(libtcmalloc_minimal_for_dll STATIC IMPORTED)
+#
+#     set_target_properties(libtcmalloc_minimal_for_dll PROPERTIES
+#                           IMPORTED_LOCATION "${TCMALLOC_LINK_LIBRARY}")
+#
+#     set_target_properties(libtcmalloc_minimal_for_exe PROPERTIES
+#                           IMPORTED_LOCATION "${TCMALLOC_LINK_LIBRARY}"
+#                           INTERFACE_LINK_OPTIONS /INCLUDE:_tcmalloc)
+#
+#     # Ensure libtcmalloc_minimal is built before it's being used.
+#     add_dependencies(libtcmalloc_minimal_for_dll build_libtcmalloc_minimal)
+#     add_dependencies(libtcmalloc_minimal_for_exe build_libtcmalloc_minimal)
+#
+#     set(DISKANN_TOOLS_TCMALLOC_LINK_OPTIONS libtcmalloc_minimal_for_exe)
+# elseif(NOT PYBIND)
+#     set(DISKANN_TOOLS_TCMALLOC_LINK_OPTIONS "-ltcmalloc")
+# endif()
+#
+# if (DISKANN_RELEASE_UNUSED_TCMALLOC_MEMORY_AT_CHECKPOINTS)
+#     add_definitions(-DRELEASE_UNUSED_TCMALLOC_MEMORY_AT_CHECKPOINTS)
+#
+#     if (MSVC)
+#         set(DISKANN_DLL_TCMALLOC_LINK_OPTIONS libtcmalloc_minimal_for_dll)
+#     endif()
+# endif()
 
 if (NOT MSVC)
     set(DISKANN_ASYNC_LIB aio)
