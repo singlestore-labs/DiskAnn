@@ -35,12 +35,6 @@ typedef int FileHandle;
 #include "memory_mapped_files.h"
 #endif
 
-#ifndef _MM_HINT_T0
-#define _MM_HINT_T0 1
-#endif
-#ifndef _MM_HINT_T1
-#define _MM_HINT_T1 2
-#endif
 
 // taken from
 // https://github.com/Microsoft/BLAS-on-flash/blob/master/include/utils.h
