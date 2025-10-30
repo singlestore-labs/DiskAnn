@@ -9,8 +9,10 @@
 #include "aligned_file_reader.h"
 #endif
 
+#ifdef EXEC_ENV_OLS
 const uint32_t MAX_REQUEST_SIZE = 1024 * 1024 * 1024; // 64MB
 const uint32_t MAX_SIMULTANEOUS_READ_REQUESTS = 128;
+#endif
 
 #ifdef _WINDOWS
 #include <intrin.h>
@@ -77,7 +79,7 @@ void block_convert(std::ofstream &writr, std::ifstream &readr, float *read_buf, 
 {
     readr.read((char *)read_buf, npts * ndims * sizeof(float));
     uint32_t ndims_u32 = (uint32_t)ndims;
-#pragma omp parallel for
+// #pragma omp parallel for
     for (int64_t i = 0; i < (int64_t)npts; i++)
     {
         float norm_pt = std::numeric_limits<float>::epsilon();
@@ -92,6 +94,11 @@ void block_convert(std::ofstream &writr, std::ifstream &readr, float *read_buf, 
         }
     }
     writr.write((char *)read_buf, npts * ndims * sizeof(float));
+}
+
+void block_copy(std::ofstream &writr, const float *read_buf, size_t npts, size_t ndims)
+{
+    writr.write((const char *)read_buf, npts * ndims * sizeof(float));
 }
 
 void normalize_data_file(const std::string &inFileName, const std::string &outFileName)
@@ -122,6 +129,30 @@ void normalize_data_file(const std::string &inFileName, const std::string &outFi
         block_convert(writr, readr, read_buf, cblk_size, ndims);
     }
     delete[] read_buf;
+
+    diskann::cout << "Wrote normalized points to file: " << outFileName << std::endl;
+}
+
+void copy_data_file(const float* vectors, uint32_t npts32, uint32_t dims32, const std::string &outFileName)
+{
+    std::ofstream writr(outFileName, std::ios::binary);
+
+    writr.write((char *)&npts32, sizeof(uint32_t));
+    writr.write((char *)&dims32, sizeof(uint32_t));
+
+    size_t npts = (size_t)npts32;
+    size_t ndims = (size_t)dims32;
+    diskann::cout << "Dataset: #pts = " << npts << ", # dims = " << ndims << std::endl;
+
+    size_t blk_size = 131072;
+    size_t nblks = ROUND_UP(npts, blk_size) / blk_size;
+    diskann::cout << "# blks: " << nblks << std::endl;
+
+    for (size_t i = 0; i < nblks; i++)
+    {
+        size_t cblk_size = std::min(npts - i * blk_size, blk_size);
+        block_copy(writr, vectors + i * blk_size * ndims, cblk_size, ndims);
+    }
 
     diskann::cout << "Wrote normalized points to file: " << outFileName << std::endl;
 }

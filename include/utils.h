@@ -35,6 +35,13 @@ typedef int FileHandle;
 #include "memory_mapped_files.h"
 #endif
 
+#ifndef _MM_HINT_T0
+#define _MM_HINT_T0 1
+#endif
+#ifndef _MM_HINT_T1
+#define _MM_HINT_T1 2
+#endif
+
 // taken from
 // https://github.com/Microsoft/BLAS-on-flash/blob/master/include/utils.h
 // round up X to the nearest multiple of Y
@@ -829,7 +836,7 @@ inline void load_aligned_bin(const std::string &bin_file, T *&data, size_t &npts
 template <typename InType, typename OutType>
 void convert_types(const InType *srcmat, OutType *destmat, size_t npts, size_t dim)
 {
-#pragma omp parallel for schedule(static, 65536)
+// #pragma omp parallel for schedule(static, 65536)
     for (int64_t i = 0; i < (int64_t)npts; i++)
     {
         for (uint64_t j = 0; j < dim; j++)
@@ -847,17 +854,12 @@ void convert_types(const InType *srcmat, OutType *destmat, size_t npts, size_t d
 // from MIPS to L2 search from "On Symmetric and Asymmetric LSHs for Inner
 // Product Search" by Neyshabur and Srebro
 
-template <typename T> float prepare_base_for_inner_products(const std::string in_file, const std::string out_file)
+template <typename T> float prepare_base_for_inner_products(const float* vectors, uint32_t npts32, uint32_t dims32, const std::string out_file)
 {
     std::cout << "Pre-processing base file by adding extra coordinate" << std::endl;
-    std::ifstream in_reader(in_file.c_str(), std::ios::binary);
     std::ofstream out_writer(out_file.c_str(), std::ios::binary);
     uint64_t npts, in_dims, out_dims;
     float max_norm = 0;
-
-    uint32_t npts32, dims32;
-    in_reader.read((char *)&npts32, sizeof(uint32_t));
-    in_reader.read((char *)&dims32, sizeof(uint32_t));
 
     npts = npts32;
     in_dims = dims32;
@@ -877,36 +879,27 @@ template <typename T> float prepare_base_for_inner_products(const std::string in
 
     std::vector<float> norms(npts, 0);
 
-    for (uint64_t b = 0; b < num_blocks; b++)
+    for (uint64_t p = 0; p < npts; p++)
     {
-        uint64_t start_id = b * block_size;
-        uint64_t end_id = (b + 1) * block_size < npts ? (b + 1) * block_size : npts;
-        uint64_t block_pts = end_id - start_id;
-        in_reader.read((char *)in_block_data.get(), block_pts * in_dims * sizeof(T));
-        for (uint64_t p = 0; p < block_pts; p++)
+        for (uint64_t j = 0; j < in_dims; j++)
         {
-            for (uint64_t j = 0; j < in_dims; j++)
-            {
-                norms[start_id + p] += in_block_data[p * in_dims + j] * in_block_data[p * in_dims + j];
-            }
-            max_norm = max_norm > norms[start_id + p] ? max_norm : norms[start_id + p];
+            norms[p] += vectors[p * in_dims + j] * vectors[p * in_dims + j];
         }
+        max_norm = max_norm > norms[p] ? max_norm : norms[p];
     }
 
     max_norm = std::sqrt(max_norm);
 
-    in_reader.seekg(2 * sizeof(uint32_t), std::ios::beg);
     for (uint64_t b = 0; b < num_blocks; b++)
     {
         uint64_t start_id = b * block_size;
         uint64_t end_id = (b + 1) * block_size < npts ? (b + 1) * block_size : npts;
         uint64_t block_pts = end_id - start_id;
-        in_reader.read((char *)in_block_data.get(), block_pts * in_dims * sizeof(T));
         for (uint64_t p = 0; p < block_pts; p++)
         {
             for (uint64_t j = 0; j < in_dims; j++)
             {
-                out_block_data[p * out_dims + j] = in_block_data[p * in_dims + j] / max_norm;
+                out_block_data[p * out_dims + j] = vectors[(start_id + p) * in_dims + j] / max_norm;
             }
             float res = 1 - (norms[start_id + p] / (max_norm * max_norm));
             res = res <= 0 ? 0 : std::sqrt(res);
@@ -1006,7 +999,11 @@ inline void prefetch_vector_l2(const char *vec, size_t vecsize)
 // NOTE: Implementation in utils.cpp.
 void block_convert(std::ofstream &writr, std::ifstream &readr, float *read_buf, uint64_t npts, uint64_t ndims);
 
+void block_copy(std::ofstream &writr, float *read_buf, uint64_t npts, uint64_t ndims);
+
 DISKANN_DLLEXPORT void normalize_data_file(const std::string &inFileName, const std::string &outFileName);
+
+DISKANN_DLLEXPORT void copy_data_file(const float* vectors, uint32_t npts32, uint32_t dims32, const std::string &outFileName);
 
 inline std::string get_tag_string(std::uint64_t tag)
 {
