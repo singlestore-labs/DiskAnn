@@ -794,7 +794,7 @@ int build_merged_vamana_index(std::string base_file, diskann::Metric compareMetr
 template <typename T, typename LabelT>
 uint32_t optimize_beamwidth(std::unique_ptr<diskann::PQFlashIndex<T, LabelT>> &pFlashIndex, T *tuning_sample,
                             uint64_t tuning_sample_num, uint64_t tuning_sample_aligned_dim, uint32_t L,
-                            uint32_t nthreads, uint32_t start_bw)
+                            uint32_t /*nthreads*/, uint32_t start_bw)
 {
     uint32_t cur_bw = start_bw;
     double max_qps = 0;
@@ -808,7 +808,6 @@ uint32_t optimize_beamwidth(std::unique_ptr<diskann::PQFlashIndex<T, LabelT>> &p
         diskann::QueryStats *stats = new diskann::QueryStats[tuning_sample_num];
 
         auto s = std::chrono::high_resolution_clock::now();
-#pragma omp parallel for schedule(dynamic, 1) num_threads(nthreads)
         for (int64_t i = 0; i < (int64_t)tuning_sample_num; i++)
         {
             pFlashIndex->cached_beam_search(tuning_sample + (i * tuning_sample_aligned_dim), 1, L,
@@ -1098,20 +1097,15 @@ void create_disk_layout(const std::string base_file, const std::string mem_index
 }
 
 template <typename T, typename LabelT>
-int build_disk_index(const char *dataFilePath, const char *indexFilePath, const char *indexBuildParameters,
-                     diskann::Metric compareMetric, bool use_opq, const std::string &codebook_prefix, bool use_filters,
-                     const std::string &label_file, const std::string &universal_label, const uint32_t filter_threshold,
+int build_disk_index(const char *indexFilePath, /*const char *indexBuildParameters,*/
+                     size_t disk_pq_dims, const float* vectors, size_t points_num, size_t dim, uint32_t R, uint32_t L,
+                     size_t num_pq_chunks,
+                     diskann::Metric compareMetric, bool use_opq, const std::string &codebook_prefix,
+                     const uint32_t /*filter_threshold*/,
                      const uint32_t Lf)
 {
-    std::stringstream parser;
-    parser << std::string(indexBuildParameters);
-    std::string cur_param;
-    std::vector<std::string> param_list;
-    while (parser >> cur_param)
-    {
-        param_list.push_back(cur_param);
-    }
-    if (param_list.size() < 5 || param_list.size() > 9)
+    // TODO(WUCHUN): replace indexBuildParameters with actual params
+    if (false /* pring out usage */)
     {
         diskann::cout << "Correct usage of parameters is R (max degree)\n"
                          "L (indexing list size, better if >= R)\n"
@@ -1139,38 +1133,13 @@ int build_disk_index(const char *dataFilePath, const char *indexFilePath, const 
         throw diskann::ANNException(stream.str(), -1);
     }
 
-    size_t disk_pq_dims = 0;
-    bool use_disk_pq = false;
+    bool use_disk_pq = disk_pq_dims == 0 ? false : true;
     size_t build_pq_bytes = 0;
 
-    // if there is a 6th parameter, it means we compress the disk index
-    // vectors also using PQ data (for very large dimensionality data). If the
-    // provided parameter is 0, it means we store full vectors.
-    if (param_list.size() > 5)
-    {
-        disk_pq_dims = atoi(param_list[5].c_str());
-        use_disk_pq = true;
-        if (disk_pq_dims == 0)
-            use_disk_pq = false;
-    }
-
     bool reorder_data = false;
-    if (param_list.size() >= 7)
-    {
-        if (1 == atoi(param_list[6].c_str()))
-        {
-            reorder_data = true;
-        }
-    }
 
-    if (param_list.size() >= 8)
-    {
-        build_pq_bytes = atoi(param_list[7].c_str());
-    }
-
-    std::string base_file(dataFilePath);
-    std::string data_file_to_use = base_file;
-    std::string labels_file_original = label_file;
+    // TODO(WUCHUN): check produced file names and remove base file for in memory vectors
+    std::string data_file_to_use;
     std::string index_prefix_path(indexFilePath);
     std::string labels_file_to_use = index_prefix_path + "_label_formatted.txt";
     std::string pq_pivots_path_base = codebook_prefix;
@@ -1213,42 +1182,32 @@ int build_disk_index(const char *dataFilePath, const char *indexFilePath, const 
                      "apart from the interim indices created by DiskANN and the final index."
                   << std::endl;
         data_file_to_use = prepped_base;
-        float max_norm_of_base = diskann::prepare_base_for_inner_products<T>(base_file, prepped_base);
+        float max_norm_of_base = diskann::prepare_base_for_inner_products<T>(vectors, points_num, dim, prepped_base);
         std::string norm_file = disk_index_path + "_max_base_norm.bin";
         diskann::save_bin<float>(norm_file, &max_norm_of_base, 1, 1);
         diskann::cout << timer.elapsed_seconds_for_step("preprocessing data for inner product") << std::endl;
         created_temp_file_for_processed_data = true;
     }
-    else if (compareMetric == diskann::Metric::COSINE)
+    //else if (compareMetric == diskann::Metric::COSINE)
+    else
     {
+        // plain copy
         Timer timer;
         std::cout << "Normalizing data for cosine to temporary file, please ensure there is additional "
                      "(n*d*4) bytes for storing normalized base vectors, "
                      "apart from the interim indices created by DiskANN and the final index."
                   << std::endl;
         data_file_to_use = prepped_base;
-        diskann::normalize_data_file(base_file, prepped_base);
+        diskann::copy_data_file(vectors, points_num, dim, prepped_base);
         diskann::cout << timer.elapsed_seconds_for_step("preprocessing data for cosine") << std::endl;
         created_temp_file_for_processed_data = true;
     }
 
-    uint32_t R = (uint32_t)atoi(param_list[0].c_str());
-    uint32_t L = (uint32_t)atoi(param_list[1].c_str());
+    // TODO(WUCHUN) checked till here
+    double indexing_ram_budget = 32;
 
-    double final_index_ram_limit = get_memory_budget(param_list[2]);
-    if (final_index_ram_limit <= 0)
-    {
-        std::cerr << "Insufficient memory budget (or string was not in right "
-                     "format). Should be > 0."
-                  << std::endl;
-        return -1;
-    }
-    double indexing_ram_budget = (float)atof(param_list[3].c_str());
-    if (indexing_ram_budget <= 0)
-    {
-        std::cerr << "Not building index. Please provide more RAM budget" << std::endl;
-        return -1;
-    }
+    uint32_t num_threads = 1;
+    /*
     uint32_t num_threads = (uint32_t)atoi(param_list[4].c_str());
 
     if (num_threads != 0)
@@ -1256,8 +1215,9 @@ int build_disk_index(const char *dataFilePath, const char *indexFilePath, const 
         omp_set_num_threads(num_threads);
         mkl_set_num_threads(num_threads);
     }
+    */
 
-    diskann::cout << "Starting index build: R=" << R << " L=" << L << " Query RAM budget: " << final_index_ram_limit
+    diskann::cout << "Starting index build: R=" << R << " L=" << L << " Query RAM budget: " << "not needed" /*final_index_ram_limit*/
                   << " Indexing ram budget: " << indexing_ram_budget << " T: " << num_threads << std::endl;
 
     auto s = std::chrono::high_resolution_clock::now();
@@ -1265,6 +1225,7 @@ int build_disk_index(const char *dataFilePath, const char *indexFilePath, const 
     // If there is filter support, we break-up points which have too many labels
     // into replica dummy points which evenly distribute the filters. The rest
     // of index build happens on the augmented base and labels
+    /*
     std::string augmented_data_file, augmented_labels_file;
     if (use_filters)
     {
@@ -1282,11 +1243,9 @@ int build_disk_index(const char *dataFilePath, const char *indexFilePath, const 
             labels_file_to_use = augmented_labels_file;
         }
     }
-
-    size_t points_num, dim;
+    */
 
     Timer timer;
-    diskann::get_bin_metadata(data_file_to_use.c_str(), points_num, dim);
     const double p_val = ((double)MAX_PQ_TRAINING_SET_SIZE / (double)points_num);
 
     if (use_disk_pq)
@@ -1294,12 +1253,12 @@ int build_disk_index(const char *dataFilePath, const char *indexFilePath, const 
         generate_disk_quantized_data<T>(data_file_to_use, disk_pq_pivots_path, disk_pq_compressed_vectors_path,
                                         compareMetric, p_val, disk_pq_dims);
     }
-    size_t num_pq_chunks = (size_t)(std::floor)(uint64_t(final_index_ram_limit / points_num));
-
+    
     num_pq_chunks = num_pq_chunks <= 0 ? 1 : num_pq_chunks;
     num_pq_chunks = num_pq_chunks > dim ? dim : num_pq_chunks;
     num_pq_chunks = num_pq_chunks > MAX_PQ_CHUNKS ? MAX_PQ_CHUNKS : num_pq_chunks;
 
+    /*
     if (param_list.size() >= 9 && atoi(param_list[8].c_str()) <= MAX_PQ_CHUNKS && atoi(param_list[8].c_str()) > 0)
     {
         std::cout << "Use quantized dimension (QD) to overwrite derived quantized "
@@ -1307,6 +1266,7 @@ int build_disk_index(const char *dataFilePath, const char *indexFilePath, const 
                   << std::endl;
         num_pq_chunks = atoi(param_list[8].c_str());
     }
+    */
 
     diskann::cout << "Compressing " << dim << "-dimensional data into " << num_pq_chunks << " bytes per vector."
                   << std::endl;
@@ -1324,8 +1284,8 @@ int build_disk_index(const char *dataFilePath, const char *indexFilePath, const 
     timer.reset();
     diskann::build_merged_vamana_index<T, LabelT>(data_file_to_use.c_str(), diskann::Metric::L2, L, R, p_val,
                                                   indexing_ram_budget, mem_index_path, medoids_path, centroids_path,
-                                                  build_pq_bytes, use_opq, num_threads, use_filters, labels_file_to_use,
-                                                  labels_to_medoids_path, universal_label, Lf);
+                                                  build_pq_bytes, use_opq, num_threads, false /*use_filters*/, labels_file_to_use,
+                                                  labels_to_medoids_path, "" /*universal_label*/, Lf);
     diskann::cout << timer.elapsed_seconds_for_step("building merged vamana index") << std::endl;
 
     timer.reset();
@@ -1348,6 +1308,7 @@ int build_disk_index(const char *dataFilePath, const char *indexFilePath, const 
         ten_percent_points > MAX_SAMPLE_POINTS_FOR_WARMUP ? MAX_SAMPLE_POINTS_FOR_WARMUP : ten_percent_points;
     double sample_sampling_rate = num_sample_points / points_num;
     gen_random_slice<T>(data_file_to_use.c_str(), sample_base_prefix, sample_sampling_rate);
+    /*
     if (use_filters)
     {
         copy_file(labels_file_to_use, disk_labels_file);
@@ -1361,6 +1322,7 @@ int build_disk_index(const char *dataFilePath, const char *indexFilePath, const 
         std::remove(augmented_labels_file.c_str());
         std::remove(labels_file_to_use.c_str());
     }
+    */
     if (created_temp_file_for_processed_data)
         std::remove(prepped_base.c_str());
     std::remove(mem_index_path.c_str());
@@ -1427,48 +1389,42 @@ template DISKANN_DLLEXPORT uint32_t optimize_beamwidth<float, uint16_t>(
     std::unique_ptr<diskann::PQFlashIndex<float, uint16_t>> &pFlashIndex, float *tuning_sample,
     uint64_t tuning_sample_num, uint64_t tuning_sample_aligned_dim, uint32_t L, uint32_t nthreads, uint32_t start_bw);
 
-template DISKANN_DLLEXPORT int build_disk_index<int8_t, uint32_t>(const char *dataFilePath, const char *indexFilePath,
-                                                                  const char *indexBuildParameters,
+template DISKANN_DLLEXPORT int build_disk_index<int8_t, uint32_t>(const char *indexFilePath,
+                                                                  size_t disk_pq_dims, const float* vectors, size_t points_num, size_t dim, uint32_t R, uint32_t L,
+                                                                  size_t num_pq_chunks,
                                                                   diskann::Metric compareMetric, bool use_opq,
-                                                                  const std::string &codebook_prefix, bool use_filters,
-                                                                  const std::string &label_file,
-                                                                  const std::string &universal_label,
+                                                                  const std::string &codebook_prefix,
                                                                   const uint32_t filter_threshold, const uint32_t Lf);
-template DISKANN_DLLEXPORT int build_disk_index<uint8_t, uint32_t>(const char *dataFilePath, const char *indexFilePath,
-                                                                   const char *indexBuildParameters,
+template DISKANN_DLLEXPORT int build_disk_index<uint8_t, uint32_t>(const char *indexFilePath,
+                                                                   size_t disk_pq_dims, const float* vectors, size_t points_num, size_t dim, uint32_t R, uint32_t L,
+                                                                   size_t num_pq_chunks,
                                                                    diskann::Metric compareMetric, bool use_opq,
-                                                                   const std::string &codebook_prefix, bool use_filters,
-                                                                   const std::string &label_file,
-                                                                   const std::string &universal_label,
+                                                                   const std::string &codebook_prefix,
                                                                    const uint32_t filter_threshold, const uint32_t Lf);
-template DISKANN_DLLEXPORT int build_disk_index<float, uint32_t>(const char *dataFilePath, const char *indexFilePath,
-                                                                 const char *indexBuildParameters,
+template DISKANN_DLLEXPORT int build_disk_index<float, uint32_t>(const char *indexFilePath,
+                                                                 size_t disk_pq_dims, const float* vectors, size_t points_num, size_t dim, uint32_t R, uint32_t L,
+                                                                 size_t num_pq_chunks,
                                                                  diskann::Metric compareMetric, bool use_opq,
-                                                                 const std::string &codebook_prefix, bool use_filters,
-                                                                 const std::string &label_file,
-                                                                 const std::string &universal_label,
+                                                                 const std::string &codebook_prefix,
                                                                  const uint32_t filter_threshold, const uint32_t Lf);
 // LabelT = uint16
-template DISKANN_DLLEXPORT int build_disk_index<int8_t, uint16_t>(const char *dataFilePath, const char *indexFilePath,
-                                                                  const char *indexBuildParameters,
+template DISKANN_DLLEXPORT int build_disk_index<int8_t, uint16_t>(const char *indexFilePath,
+                                                                  size_t disk_pq_dims, const float* vectors, size_t points_num, size_t dim, uint32_t R, uint32_t L,
+                                                                  size_t num_pq_chunks,
                                                                   diskann::Metric compareMetric, bool use_opq,
-                                                                  const std::string &codebook_prefix, bool use_filters,
-                                                                  const std::string &label_file,
-                                                                  const std::string &universal_label,
+                                                                  const std::string &codebook_prefix,
                                                                   const uint32_t filter_threshold, const uint32_t Lf);
-template DISKANN_DLLEXPORT int build_disk_index<uint8_t, uint16_t>(const char *dataFilePath, const char *indexFilePath,
-                                                                   const char *indexBuildParameters,
+template DISKANN_DLLEXPORT int build_disk_index<uint8_t, uint16_t>(const char *indexFilePath,
+                                                                   size_t disk_pq_dims, const float* vectors, size_t points_num, size_t dim, uint32_t R, uint32_t L,
+                                                                   size_t num_pq_chunks,
                                                                    diskann::Metric compareMetric, bool use_opq,
-                                                                   const std::string &codebook_prefix, bool use_filters,
-                                                                   const std::string &label_file,
-                                                                   const std::string &universal_label,
+                                                                   const std::string &codebook_prefix,
                                                                    const uint32_t filter_threshold, const uint32_t Lf);
-template DISKANN_DLLEXPORT int build_disk_index<float, uint16_t>(const char *dataFilePath, const char *indexFilePath,
-                                                                 const char *indexBuildParameters,
+template DISKANN_DLLEXPORT int build_disk_index<float, uint16_t>(const char *indexFilePath,
+                                                                 size_t disk_pq_dims, const float* vectors, size_t points_num, size_t dim, uint32_t R, uint32_t L,
+                                                                 size_t num_pq_chunks,
                                                                  diskann::Metric compareMetric, bool use_opq,
-                                                                 const std::string &codebook_prefix, bool use_filters,
-                                                                 const std::string &label_file,
-                                                                 const std::string &universal_label,
+                                                                 const std::string &codebook_prefix,
                                                                  const uint32_t filter_threshold, const uint32_t Lf);
 
 template DISKANN_DLLEXPORT int build_merged_vamana_index<int8_t, uint32_t>(
