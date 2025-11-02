@@ -46,9 +46,11 @@ void rotate_data_randomly(float *data, size_t num_points, size_t dim, float *rot
         transpose = CblasTrans;
     }
     diskann::cout << "done Rotating data with random matrix.." << std::flush;
-
+    
+    std::cout << "Till here....for debug with cblas_sgemm" << std::endl;
     cblas_sgemm(CblasRowMajor, CblasNoTrans, transpose, (MKL_INT)num_points, (MKL_INT)dim, (MKL_INT)dim, 1.0, data,
                 (MKL_INT)dim, rot_mat, (MKL_INT)dim, 0, new_mat, (MKL_INT)dim);
+    std::cout << "cblas_sgemm complete....for debug" << std::endl;
 
     diskann::cout << "done." << std::endl;
 }
