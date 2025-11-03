@@ -176,7 +176,7 @@ void LinuxAlignedFileReader::deregister_thread()
 
     lk.unlock();
     io_context_t ctx = this->get_ctx();
-    io_destroy(ctx);
+    syscall_io_destroy_typesafe(ctx);
     //  assert(ret == 0);
     lk.lock();
     ctx_map.erase(my_id);
@@ -190,7 +190,7 @@ void LinuxAlignedFileReader::deregister_all_threads()
     for (auto x = ctx_map.begin(); x != ctx_map.end(); x++)
     {
         io_context_t ctx = x.value();
-        io_destroy(ctx);
+        syscall_io_destroy_typesafe(ctx);
         //  assert(ret == 0);
         //  lk.lock();
         //  ctx_map.erase(my_id);
