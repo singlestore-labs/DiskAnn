@@ -29,10 +29,8 @@ void compute_vecs_l2sq(float *vecs_l2sq, float *data, const size_t num_points, c
 #pragma omp parallel for schedule(static, 8192)
     for (int64_t n_iter = 0; n_iter < (int64_t)num_points; n_iter++)
     {   
-        // std::cout << "Till here....for debug" << std::endl;
         vecs_l2sq[n_iter] = cblas_snrm2((MKL_INT)dim, (data + (n_iter * dim)), 1);
         vecs_l2sq[n_iter] *= vecs_l2sq[n_iter];
-        // std::cout << "cblas_snrm2 complete....for debug" << std::endl;
     }
 }
 
@@ -47,10 +45,8 @@ void rotate_data_randomly(float *data, size_t num_points, size_t dim, float *rot
     }
     diskann::cout << "done Rotating data with random matrix.." << std::flush;
     
-    std::cout << "Till here....for debug with cblas_sgemm" << std::endl;
     cblas_sgemm(CblasRowMajor, CblasNoTrans, transpose, (MKL_INT)num_points, (MKL_INT)dim, (MKL_INT)dim, 1.0, data,
                 (MKL_INT)dim, rot_mat, (MKL_INT)dim, 0, new_mat, (MKL_INT)dim);
-    std::cout << "cblas_sgemm complete....for debug" << std::endl;
 
     diskann::cout << "done." << std::endl;
 }
