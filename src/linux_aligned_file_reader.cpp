@@ -8,7 +8,9 @@
 #include <iostream>
 #include "tsl/robin_map.h"
 #include "utils.h"
-#define MAX_EVENTS 1024
+
+#include "lockfree/unexposed_syscalls.h"
+#define MAX_EVENTS 16 //1024
 
 namespace
 {
@@ -54,7 +56,7 @@ void execute_io(io_context_t ctx, int fd, std::vector<AlignedRead> &read_reqs, u
         while (n_tries <= n_retries)
         {
             // issue reads
-            int64_t ret = io_submit(ctx, (int64_t)n_ops, cbs.data());
+            int64_t ret = syscall_io_submit_typesafe(ctx, (int64_t)n_ops, cbs.data());
             // if requests didn't get accepted
             if (ret != (int64_t)n_ops)
             {
@@ -66,7 +68,7 @@ void execute_io(io_context_t ctx, int fd, std::vector<AlignedRead> &read_reqs, u
             else
             {
                 // wait on io_getevents
-                ret = io_getevents(ctx, (int64_t)n_ops, (int64_t)n_ops, evts.data(), nullptr);
+                ret = syscall_io_getevents_typesafe(ctx, (int64_t)n_ops, (int64_t)n_ops, evts.data(), nullptr);
                 // if requests didn't complete
                 if (ret != (int64_t)n_ops)
                 {
@@ -98,6 +100,8 @@ LinuxAlignedFileReader::LinuxAlignedFileReader()
 
 LinuxAlignedFileReader::~LinuxAlignedFileReader()
 {
+    // the check on a closed file causes issue in our ftrack
+    /*
     int64_t ret;
     // check to make sure file_desc is closed
     ret = ::fcntl(this->file_desc, F_GETFD);
@@ -116,6 +120,7 @@ LinuxAlignedFileReader::~LinuxAlignedFileReader()
             }
         }
     }
+    */
 }
 
 io_context_t &LinuxAlignedFileReader::get_ctx()
@@ -143,7 +148,7 @@ void LinuxAlignedFileReader::register_thread()
         return;
     }
     io_context_t ctx = 0;
-    int ret = io_setup(MAX_EVENTS, &ctx);
+    int ret = syscall_io_setup_typesafe(MAX_EVENTS, &ctx);
     if (ret != 0)
     {
         lk.unlock();
