@@ -29,10 +29,10 @@ void compute_vecs_l2sq(float *vecs_l2sq, float *data, const size_t num_points, c
 #pragma omp parallel for schedule(static, 8192)
     for (int64_t n_iter = 0; n_iter < (int64_t)num_points; n_iter++)
     {   
-        std::cout << "Till here....for debug" << std::endl;
+        // std::cout << "Till here....for debug" << std::endl;
         vecs_l2sq[n_iter] = cblas_snrm2((MKL_INT)dim, (data + (n_iter * dim)), 1);
         vecs_l2sq[n_iter] *= vecs_l2sq[n_iter];
-        std::cout << "cblas_snrm2 complete....for debug" << std::endl;
+        // std::cout << "cblas_snrm2 complete....for debug" << std::endl;
     }
 }
 

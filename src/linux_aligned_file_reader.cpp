@@ -56,10 +56,10 @@ void execute_io(io_context_t ctx, int fd, std::vector<AlignedRead> &read_reqs, u
         {
             // issue reads
             int64_t ret = syscall_io_submit_typesafe(ctx, (int64_t)n_ops, cbs.data());
-            // if requests didn't get accepted
+            // if requests didn't get accepted 
             if (ret != (int64_t)n_ops)
             {
-                std::cerr << "io_submit() failed; returned " << ret << ", expected=" << n_ops << ", ernno=" << errno
+                std::cerr << "syscall_io_submit() failed; returned " << ret << ", expected=" << n_ops << ", ernno=" << errno
                           << "=" << ::strerror(-ret) << ", try #" << n_tries + 1;
                 std::cout << "ctx: " << ctx << "\n";
                 exit(-1);
