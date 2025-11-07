@@ -8,6 +8,7 @@
 #include <iostream>
 #include "tsl/robin_map.h"
 #include "utils.h"
+#include "lockfree/unexposed_syscalls.h"
 
 #define MAX_EVENTS 16 //1024
 
