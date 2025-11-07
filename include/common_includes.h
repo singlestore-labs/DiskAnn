@@ -25,3 +25,7 @@
 #include <sstream>
 #include <unordered_map>
 #include <vector>
+
+#ifdef __x86_64__
+#include <xmmintrin.h>  // For _MM_HINT_T0, _MM_HINT_T1, etc.
+#endif
