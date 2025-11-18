@@ -80,14 +80,14 @@ if (MSVC)
         "${DISKANN_MSVC_PACKAGES}/intelopenmp.redist.win/runtimes/win-x64/native/libiomp5md.dll"
         "${DISKANN_MSVC_PACKAGES}/intelopenmp.redist.win/runtimes/win-x64/native/libiomp5md.pdb")
 else()
-    find_package(OpenMP)
+    # find_package(OpenMP)
 
-    if (OPENMP_FOUND)
-        set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
-        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
-    else()
-        message(FATAL_ERROR "No OpenMP support")
-    endif()
+    # if (OPENMP_FOUND)
+    #     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
+    #     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+    # else()
+    #     message(FATAL_ERROR "No OpenMP support")
+    # endif()
 endif()
 
 # DiskANN core uses header-only libraries. Only DiskANN tools need program_options which has a linker library,
@@ -191,33 +191,40 @@ else()
     if (NOT MKL_FOUND)
         messsage(FATAL_ERROR "MKL not found")
     endif()
+    # link_libraries(
+    #         ${MKL_LIBRARIES}
+    #         -lmkl_blacs_intelmpi_ilp64
+    #         -lmkl_blacs_intelmpi_lp64
+    #         -lmkl_blacs_openmpi_ilp64
+    #         -lmkl_blacs_openmpi_lp64
+    #         -lmkl_blas95_ilp64
+    #         -lmkl_blas95_lp64
+    #         -lmkl_cdft_core
+    #         -lmkl_core
+    #         -lmkl_gf_ilp64
+    #         -lmkl_gf_lp64
+    #         -lmkl_gnu_thread
+    #         -lmkl_intel_ilp64
+    #         -lmkl_intel_lp64
+    #         -lmkl_intel_thread
+    #         -lmkl_lapack95_ilp64
+    #         -lmkl_lapack95_lp64
+    #         -lmkl_pgi_thread
+    #         -lmkl_scalapack_ilp64
+    #         -lmkl_scalapack_lp64
+    #         -lmkl_sequential
+    #         -lmkl_tbb_thread
+    #         # iomp5
+    #         pthread
+    #         m
+    #         dl)
     link_libraries(
-            ${MKL_LIBRARIES}
-            -lmkl_blacs_intelmpi_ilp64
-            -lmkl_blacs_intelmpi_lp64
-            -lmkl_blacs_openmpi_ilp64
-            -lmkl_blacs_openmpi_lp64
-            -lmkl_blas95_ilp64
-            -lmkl_blas95_lp64
-            -lmkl_cdft_core
-            -lmkl_core
-            -lmkl_gf_ilp64
-            -lmkl_gf_lp64
-            -lmkl_gnu_thread
-            -lmkl_intel_ilp64
-            -lmkl_intel_lp64
-            -lmkl_intel_thread
-            -lmkl_lapack95_ilp64
-            -lmkl_lapack95_lp64
-            -lmkl_pgi_thread
-            -lmkl_scalapack_ilp64
-            -lmkl_scalapack_lp64
-            -lmkl_sequential
-            -lmkl_tbb_thread
-            # iomp5
-            pthread
-            m
-            dl)
+          -lmkl_intel_ilp64   # Or -lmkl_intel_lp64 depending on interface
+          -lmkl_sequential     # Sequential = no threading = no OpenMP
+          -lmkl_core           # Core computation routines
+          pthread
+          m
+          dl)
 endif()
 
 # add_definitions(-DMKL_ILP64)
@@ -302,7 +309,9 @@ if(MSVC)
 	set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_RELEASE ${PROJECT_SOURCE_DIR}/x64/Release)
 else()
     set(ENV{TCMALLOC_LARGE_ALLOC_REPORT_THRESHOLD} 500000000000)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx2 -mfma -msse2 -ftree-vectorize -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free -fopenmp -fopenmp-simd -funroll-loops -Wfatal-errors -DUSE_AVX2")
+    # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx2 -mfma -msse2 -ftree-vectorize -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free -fopenmp -fopenmp-simd -funroll-loops -Wfatal-errors -DUSE_AVX2")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx2 -mfma -msse2 -ftree-vectorize -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free -funroll-loops -Wfatal-errors -DUSE_AVX2")
+
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g -DDEBUG")
     if (NOT PYBIND)
         set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -DNDEBUG -Ofast")
